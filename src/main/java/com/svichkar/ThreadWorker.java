@@ -1,8 +1,5 @@
 package com.svichkar;
 
-import org.jline.terminal.Terminal;
-import org.jline.terminal.TerminalBuilder;
-
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -11,40 +8,35 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.*;
 
-public class ThreadWorker {
+public class ThreadWorker implements IStopTerminalObserver {
+    private ExecutorService executorService;
+    private CountDownLatch latchStart;
 
+    /**
+     * Запускаем одновременно потоки по папкам
+     */
     Optional<List<Result>> createThreads(Map<Integer, File> folderCollection) {
-        CountDownLatch latchStart = new CountDownLatch(1);
-        ExecutorService executorService = Executors.newCachedThreadPool();
+        latchStart = new CountDownLatch(1);
+        executorService = Executors.newCachedThreadPool();
         List<Future<Result>> resultFuture = new ArrayList<>();
+        ICloseTerminalObserver ICloseTerminalObserver;
 
         for (Map.Entry<Integer, File> file : folderCollection.entrySet()) {
             Future<Result> taskResult = executorService.submit(new FolderWalker(file, latchStart));
             resultFuture.add(taskResult);
         }
-        terminalListener(latchStart, executorService, resultFuture);
+        executorService.submit((Runnable) (ICloseTerminalObserver = new ListenerTerminal(this)));
+        System.out.println("Press Esc to stop scan.\n" + "Scanning ...");
+        while (!futureIsDone(resultFuture)) ;
+        try {
+            ICloseTerminalObserver.stopTerminal();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
         if (!executorService.isShutdown()) {
             executorService.shutdownNow();
         }
         return convertFutureToResult(resultFuture);
-    }
-
-    private void terminalListener(CountDownLatch latchStart,
-                                  ExecutorService executorService,
-                                  List<Future<Result>> resultFuture) {
-        try {
-            Terminal terminal = TerminalBuilder.terminal();
-            System.out.println("Press Esc to stop scan.\n" + "Scanning ...");
-            latchStart.countDown();
-            while (!futureIsDone(resultFuture)) {
-                if (isEscKeyPressed(terminal)) {
-                    System.out.println("\n Esc is pressed, interrupting scan ... \n");
-                    executorService.shutdownNow();
-                }
-            }
-        } catch (IOException e) {
-            System.out.println("Terminal problem is found. " + e.getMessage());
-        }
     }
 
     private boolean futureIsDone(List<Future<Result>> resultFuture) {
@@ -66,7 +58,13 @@ public class ThreadWorker {
         return Optional.empty();
     }
 
-    private boolean isEscKeyPressed(Terminal terminal) throws IOException {
-        return terminal.reader().read(10) == 27;
+    @Override
+    public void interruptedExecutorService() {
+        executorService.shutdownNow();
+    }
+
+    @Override
+    public void startScanFolders() {
+        latchStart.countDown();
     }
 }
