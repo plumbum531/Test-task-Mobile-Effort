@@ -12,7 +12,7 @@ public class CreateFilePath {
     public boolean createFileFromFileName(File fileName) {
         try {
             if (fileName.createNewFile()) {
-                System.out.println("File is created with name " + fileName);
+                System.out.println("File is created with name " + fileName.getName());
                 return true;
             }
         } catch (IOException e) {
